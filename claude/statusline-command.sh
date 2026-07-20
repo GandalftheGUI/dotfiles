@@ -28,6 +28,26 @@ format_pct() {
   fi
 }
 
+# Format a raw token count compactly: "734", "67k", "1M", "1.5M". Rounds to
+# the nearest thousand once above 1k. Empty/non-numeric in → empty out.
+format_tokens() {
+  local n="$1"
+  [[ "$n" =~ ^[0-9]+$ ]] || return
+  if [ "$n" -ge 1000000 ]; then
+    local whole=$(( n / 1000000 ))
+    local frac=$(( (n % 1000000) / 100000 ))   # tenths of a million
+    if [ "$frac" -eq 0 ]; then
+      printf "%dM" "$whole"
+    else
+      printf "%d.%dM" "$whole" "$frac"
+    fi
+  elif [ "$n" -ge 1000 ]; then
+    printf "%dk" "$(( (n + 500) / 1000 ))"
+  else
+    printf "%d" "$n"
+  fi
+}
+
 # Format the seconds remaining until an epoch as a compact countdown, e.g.
 # "20 mins", "2h 05m", or "4d 05h" for spans of a day or more (the weekly
 # reset can be up to 7 days out, where "101h 33m" stops being readable).
@@ -120,9 +140,20 @@ context_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
 five_hour_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
 seven_day_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
 
+context_tokens_used=$(echo "$input" | jq -r '.context_window.total_input_tokens // empty')
+context_tokens_total=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
+
 session_pct_str=$(format_pct "$five_hour_pct")
 weekly_pct_str=$(format_pct "$seven_day_pct")
 context_pct_str=$(format_pct "$context_pct")
+
+# The context window has no reset; show the raw token budget behind its
+# percentage instead, e.g. "67k / 1M". Left blank if the token fields are
+# absent.
+context_tokens_str=""
+if [ -n "$context_tokens_used" ] && [ -n "$context_tokens_total" ]; then
+  context_tokens_str="$(format_tokens "$context_tokens_used") / $(format_tokens "$context_tokens_total") Tokens"
+fi
 
 format_reset_parts "$five_hour_reset"
 session_weekday="$RP_WEEKDAY"; session_time="$RP_TIME"; session_ampm="$RP_AMPM"; session_countdown="$RP_COUNTDOWN"
@@ -182,6 +213,14 @@ pct_w=4                 # right-aligned, fits "100%"
 reset_col_w=0
 [ ${#session_reset_str} -gt $reset_col_w ] && reset_col_w=${#session_reset_str}
 [ ${#weekly_reset_str} -gt $reset_col_w ] && reset_col_w=${#weekly_reset_str}
+[ ${#context_tokens_str} -gt $reset_col_w ] && reset_col_w=${#context_tokens_str}
+
+# Right-justify the token string within the reset column so it hugs the right
+# edge (the reset column is the rightmost element on every row). The reset
+# strings stay left-aligned — only the context tokens get this treatment.
+if [ -n "$context_tokens_str" ]; then
+  context_tokens_str=$(printf "%*s" "$reset_col_w" "$context_tokens_str")
+fi
 
 # Per-row fixed overhead (matches what print_row actually emits): label +
 # " [" + "] " + percentage + "  " + reset column. The bar fills the rest.
@@ -244,4 +283,4 @@ print_row "CURRENT SESSION:" "$five_hour_pct" "$session_pct_str" "$session_reset
 printf "\n"
 print_row "WEEKLY SESSION:"  "$seven_day_pct" "$weekly_pct_str"  "$weekly_reset_str"
 printf "\n"
-print_row "CONTEXT:"         "$context_pct"   "$context_pct_str" ""
+print_row "CONTEXT WINDOW:"  "$context_pct"   "$context_pct_str" "$context_tokens_str"
