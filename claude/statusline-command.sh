@@ -48,6 +48,20 @@ format_tokens() {
   fi
 }
 
+# Format a raw token count with thousands separators, e.g. "999,999". Used
+# for the live "tokens used" figure so it's readable as it ticks up.
+# Empty/non-numeric in → empty out.
+format_tokens_comma() {
+  local n="$1"
+  [[ "$n" =~ ^[0-9]+$ ]] || return
+  local out=""
+  while [ ${#n} -gt 3 ]; do
+    out=",${n: -3}${out}"
+    n=${n:0:${#n}-3}
+  done
+  printf "%s%s" "$n" "$out"
+}
+
 # Format the seconds remaining until an epoch as a compact countdown, e.g.
 # "20 mins", "2h 05m", or "4d 05h" for spans of a day or more (the weekly
 # reset can be up to 7 days out, where "101h 33m" stops being readable).
@@ -71,7 +85,7 @@ format_countdown() {
   elif [ "$hours" -gt 0 ]; then
     printf "%dh %02dm" "$hours" "$mins"
   elif [ "$mins" -gt 0 ]; then
-    printf "%d mins" "$mins"
+    printf "%d min" "$mins"
   else
     printf "<1 min"
   fi
@@ -152,7 +166,7 @@ context_pct_str=$(format_pct "$context_pct")
 # absent.
 context_tokens_str=""
 if [ -n "$context_tokens_used" ] && [ -n "$context_tokens_total" ]; then
-  context_tokens_str="$(format_tokens "$context_tokens_used") / $(format_tokens "$context_tokens_total") Tokens"
+  context_tokens_str="$(format_tokens_comma "$context_tokens_used") / $(format_tokens "$context_tokens_total") Tokens"
 fi
 
 format_reset_parts "$five_hour_reset"
