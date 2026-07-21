@@ -81,7 +81,10 @@ format_countdown() {
   local now remaining
   now=$(date "+%s")
   remaining=$(( epoch - now ))
-  [ "$remaining" -le 0 ] && return
+  # Once the reset moment has passed we're in the brief gap before Claude Code
+  # fetches the fresh window. Floor at "0 min" rather than returning blank so
+  # the countdown doesn't just disappear.
+  [ "$remaining" -le 0 ] && { printf "0 min"; return; }
 
   local days hours mins
   days=$(( remaining / 86400 ))
