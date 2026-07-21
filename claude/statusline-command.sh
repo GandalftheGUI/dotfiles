@@ -18,6 +18,14 @@ if [ -z "$term_width" ] || ! [[ "$term_width" =~ ^[0-9]+$ ]] || [ "$term_width" 
   term_width=80
 fi
 
+# When the panel gets tight, switch to a condensed layout: the reset column
+# drops the absolute time and shows only the countdown (e.g. "37 min"), and
+# the token figure collapses to the compact form ("163k / 1M", no "Tokens"
+# word). This reclaims room for the bar on narrow windows. Tunable.
+narrow_threshold=80
+narrow=0
+[ "$term_width" -lt "$narrow_threshold" ] && narrow=1
+
 # Format a 0-100 value as "NN%", or "n/a" if empty.
 format_pct() {
   local pct="$1"
@@ -166,7 +174,13 @@ context_pct_str=$(format_pct "$context_pct")
 # absent.
 context_tokens_str=""
 if [ -n "$context_tokens_used" ] && [ -n "$context_tokens_total" ]; then
-  context_tokens_str="$(format_tokens_comma "$context_tokens_used") / $(format_tokens "$context_tokens_total") Tokens"
+  if [ "$narrow" -eq 1 ]; then
+    # Just the compact used count, no total or "Tokens" word: "163k".
+    context_tokens_str="$(format_tokens "$context_tokens_used")"
+  else
+    # Full used count with commas so it's readable as it ticks up.
+    context_tokens_str="$(format_tokens_comma "$context_tokens_used") / $(format_tokens "$context_tokens_total") Tokens"
+  fi
 fi
 
 format_reset_parts "$five_hour_reset"
@@ -197,8 +211,18 @@ build_reset_str() {
   printf "%s" "$out"
 }
 
-session_reset_str=$(build_reset_str "$session_weekday" "$session_time" "$session_ampm" "$session_countdown")
-weekly_reset_str=$(build_reset_str "$weekly_weekday" "$weekly_time" "$weekly_ampm" "$weekly_countdown")
+# In narrow mode show only the time remaining (the countdown); otherwise show
+# the absolute reset time with the countdown in parentheses. Fall back to the
+# absolute time if a countdown isn't available (e.g. resets_at absent).
+if [ "$narrow" -eq 1 ]; then
+  session_reset_str="$session_countdown"
+  weekly_reset_str="$weekly_countdown"
+  [ -z "$session_reset_str" ] && session_reset_str=$(build_reset_str "$session_weekday" "$session_time" "$session_ampm" "")
+  [ -z "$weekly_reset_str" ] && weekly_reset_str=$(build_reset_str "$weekly_weekday" "$weekly_time" "$weekly_ampm" "")
+else
+  session_reset_str=$(build_reset_str "$session_weekday" "$session_time" "$session_ampm" "$session_countdown")
+  weekly_reset_str=$(build_reset_str "$weekly_weekday" "$weekly_time" "$weekly_ampm" "$weekly_countdown")
+fi
 
 # --- Colors (truecolor) and bar glyphs ---
 C_LABEL=$'\033[38;2;198;220;198m'   # pale green-white labels
